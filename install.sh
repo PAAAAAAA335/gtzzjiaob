@@ -59,12 +59,15 @@ rm -f "$tmp_hosts"
 export GIT_SSH_COMMAND="ssh -i ${KEY} -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
 
 if ! git ls-remote "git@github.com:${FULL_REPO}.git" HEAD >/dev/null 2>&1; then
-  log "首次授权：请按终端提示，在浏览器确认一次 GitHub 登录。"
+  log "首次授权：请在浏览器确认一次 GitHub 登录。"
+  printf '\n\033[1;36mGitHub 授权网址：https://github.com/login/device\033[0m\n'
+  printf '终端随后会显示一次性代码，请复制到上面网页完成授权。\n'
+  printf '保持当前 SSH 窗口不要关闭；授权完成后脚本会自动继续。\n\n'
   had_auth=0
   if gh auth status --hostname github.com >/dev/null 2>&1; then
     had_auth=1
   else
-    gh auth login --hostname github.com --web --git-protocol https --scopes repo
+    GH_BROWSER=echo gh auth login --hostname github.com --web --git-protocol https --scopes repo
   fi
 
   login="$(gh api user --jq .login 2>/dev/null || true)"
