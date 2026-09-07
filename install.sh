@@ -85,6 +85,8 @@ if ! git ls-remote "git@github.com:${FULL_REPO}.git" HEAD >/dev/null 2>&1; then
   fi
 fi
 
+# Clean only PAJE-owned abandoned staging directories from interrupted bootstrap runs.
+find /opt -maxdepth 1 -type d -name 'paje-vps-toolkit.new.*' -exec rm -rf -- {} + 2>/dev/null || true
 rm -rf "$TMP"
 log "拉取 PAJE 私有仓库..."
 git clone --filter=blob:none "git@github.com:${FULL_REPO}.git" "$TMP"
