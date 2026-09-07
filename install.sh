@@ -11,6 +11,8 @@ TMP="${WORK}.new.$$"
 log(){ printf '\033[1;32m[PAJE] %s\033[0m\n' "$*"; }
 warn(){ printf '\033[1;33m[WARN] %s\033[0m\n' "$*" >&2; }
 die(){ printf '\033[1;31m[ERROR] %s\033[0m\n' "$*" >&2; exit 1; }
+cleanup_tmp(){ rm -rf "$TMP" 2>/dev/null || true; }
+trap cleanup_tmp EXIT
 
 [[ ${EUID:-$(id -u)} -eq 0 ]] || die "请使用 root 运行。"
 [[ -r /etc/os-release ]] || die "缺少 /etc/os-release"
@@ -62,9 +64,6 @@ if ! git ls-remote "git@github.com:${FULL_REPO}.git" HEAD >/dev/null 2>&1; then
   if gh auth status --hostname github.com >/dev/null 2>&1; then
     had_auth=1
   else
-    # IMPORTANT: temporary GitHub CLI login uses HTTPS on purpose. Do NOT let
-    # gh upload the PAJE deploy key as an account-wide SSH key. The key is
-    # registered below only as a read-only Deploy Key for this single repo.
     gh auth login --hostname github.com --web --git-protocol https --scopes repo
   fi
 
@@ -101,51 +100,28 @@ else
   git checkout main
 fi
 
-python3 scripts/unpack_core.py
-python3 - <<'PY'
-from pathlib import Path
-import base64,gzip,hashlib,json,os,tempfile
-root=Path('.')
-m=json.loads((root/'packed/manifest.json').read_text())
-for rel,meta in m['files'].items():
-    if rel=='lib/paje/paje.py':
-        continue
-    target=root/rel
-    expected=str(meta['sha256']).lower()
-    if target.exists():
-        got=hashlib.sha256(target.read_bytes()).hexdigest()
-        if got!=expected:
-            raise SystemExit(f'existing target checksum mismatch: {rel}')
-        continue
-    parts=[root/p for p in meta['parts']]
-    encoded=b''.join(b''.join(p.read_bytes().split()) for p in parts)
-    raw=gzip.decompress(base64.b64decode(encoded,validate=True))
-    got=hashlib.sha256(raw).hexdigest()
-    if got!=expected:
-        raise SystemExit(f'payload checksum mismatch: {rel}')
-    target.parent.mkdir(parents=True,exist_ok=True)
-    fd,tmp=tempfile.mkstemp(prefix='.'+target.name+'.',dir=str(target.parent))
-    with os.fdopen(fd,'wb') as f:
-        f.write(raw); f.flush(); os.fsync(f.fileno())
-    os.chmod(tmp,int(str(meta.get('mode','0644')),8)); os.replace(tmp,target)
-    print('materialized',rel)
-PY
+log "还原并校验 PAJE 大型源码..."
+python3 scripts/materialize_packed.py
 
-log "执行安装前检查..."
-python3 -m py_compile lib/paje/paje.py scripts/legacy_ota.py
-bash -n install.sh
-python3 scripts/terminal_only_scan.py
-python3 scripts/secret_scan.py .
-python3 lib/paje/paje.py self-test >/dev/null
+log "执行安装前完整静态检查..."
+bash tests/run.sh
 
 rm -rf "${WORK}.old"
 if [[ -d "$WORK" ]]; then mv "$WORK" "${WORK}.old"; fi
 mv "$TMP" "$WORK"
+trap - EXIT
 cd "$WORK"
 
 log "安装 PAJE..."
-bash install.sh
-rm -rf "${WORK}.old" 2>/dev/null || true
+if bash install.sh; then
+  rm -rf "${WORK}.old" 2>/dev/null || true
+else
+  rc=$?
+  warn "PAJE 安装失败，恢复 /opt 下上一版本。"
+  rm -rf "$WORK" 2>/dev/null || true
+  [[ -d "${WORK}.old" ]] && mv "${WORK}.old" "$WORK" || true
+  exit "$rc"
+fi
 
 printf '\n'
 log "完成。以后直接输入：paje"
