@@ -62,7 +62,10 @@ if ! git ls-remote "git@github.com:${FULL_REPO}.git" HEAD >/dev/null 2>&1; then
   if gh auth status --hostname github.com >/dev/null 2>&1; then
     had_auth=1
   else
-    gh auth login --hostname github.com --web --git-protocol ssh --scopes repo
+    # IMPORTANT: temporary GitHub CLI login uses HTTPS on purpose. Do NOT let
+    # gh upload the PAJE deploy key as an account-wide SSH key. The key is
+    # registered below only as a read-only Deploy Key for this single repo.
+    gh auth login --hostname github.com --web --git-protocol https --scopes repo
   fi
 
   login="$(gh api user --jq .login 2>/dev/null || true)"
@@ -98,8 +101,6 @@ else
   git checkout main
 fi
 
-# 当前仓库的大文件通过校验分块传输。新版 core 用独立固定哈希载荷；
-# 其余缺失模块按 manifest 逐个还原，绝不覆盖已经存在的新源码。
 python3 scripts/unpack_core.py
 python3 - <<'PY'
 from pathlib import Path
