@@ -117,13 +117,17 @@ trap - EXIT
 cd "$WORK"
 
 install_rc=0
-if ! bash install.sh; then
+if bash install.sh; then
+  install_rc=0
+else
   install_rc=$?
 fi
 
 if [[ "$install_rc" -eq 0 && -x /usr/local/lib/paje-suite/scripts/traffic_converge.sh ]]; then
   log "检测并 OTA 接管已有流量统计代码（配置/历史/校准/TG/cron 保留）..."
-  if ! bash /usr/local/lib/paje-suite/scripts/traffic_converge.sh; then
+  if bash /usr/local/lib/paje-suite/scripts/traffic_converge.sh; then
+    :
+  else
     install_rc=$?
   fi
 fi
