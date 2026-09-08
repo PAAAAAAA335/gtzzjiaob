@@ -88,7 +88,6 @@ if ! git ls-remote "git@github.com:${FULL_REPO}.git" HEAD >/dev/null 2>&1; then
   fi
 fi
 
-# Clean only PAJE-owned abandoned staging directories from interrupted bootstrap runs.
 find /opt -maxdepth 1 -type d -name 'paje-vps-toolkit.new.*' -exec rm -rf -- {} + 2>/dev/null || true
 rm -rf "$TMP"
 log "拉取 PAJE 私有仓库..."
@@ -117,15 +116,25 @@ mv "$TMP" "$WORK"
 trap - EXIT
 cd "$WORK"
 
-log "安装 PAJE..."
-if bash install.sh; then
+install_rc=0
+if ! bash install.sh; then
+  install_rc=$?
+fi
+
+if [[ "$install_rc" -eq 0 && -x /usr/local/lib/paje-suite/scripts/traffic_converge.sh ]]; then
+  log "检测并 OTA 接管已有流量统计代码（配置/历史/校准/TG/cron 保留）..."
+  if ! bash /usr/local/lib/paje-suite/scripts/traffic_converge.sh; then
+    install_rc=$?
+  fi
+fi
+
+if [[ "$install_rc" -eq 0 ]]; then
   rm -rf "${WORK}.old" 2>/dev/null || true
 else
-  rc=$?
-  warn "PAJE 安装失败，恢复 /opt 下上一版本。"
+  warn "PAJE 安装/模块接管失败，恢复 /opt 下上一版本。"
   rm -rf "$WORK" 2>/dev/null || true
   [[ -d "${WORK}.old" ]] && mv "${WORK}.old" "$WORK" || true
-  exit "$rc"
+  exit "$install_rc"
 fi
 
 printf '\n'
